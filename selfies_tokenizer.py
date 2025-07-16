@@ -26,7 +26,9 @@ class SELFIES_Tokenizer:
             except (sf.DecoderError, sf.EncoderError) as e:
                 print(f"Warning: Could not process SELFIES '{s}'. Error: {e}")
                 continue
-
+            except TypeError:
+                pass
+                import pdb; pdb.set_trace()
         vocab = self.specials + sorted(list(all_symbols))
         self.symbol_to_idx = {s: i for i, s in enumerate(vocab)}
         self.idx_to_symbol = {i: s for i, s in enumerate(vocab)}

@@ -103,15 +103,16 @@ def main():
             print("Dataset is small, duplicating it 100x for this demonstration.")
             raw_selfies *= 100
         tokenizer.build_vocab(raw_selfies)
-    
+
     full_dataset = SELFIES_Dataset(raw_selfies, tokenizer)
+    print("1")
     train_size = int(0.9 * len(full_dataset))
     val_size = len(full_dataset) - train_size
     train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])
     custom_collate = partial(collate_fn, pad_idx=tokenizer.pad_idx)
     train_dataloader = DataLoader(train_dataset, batch_size=config.BATCH_SIZE, shuffle=True, collate_fn=custom_collate)
     val_dataloader = DataLoader(val_dataset, batch_size=config.BATCH_SIZE, shuffle=False, collate_fn=custom_collate)
-    
+
     # --- Instantiate Model and Optimizer if not loaded from checkpoint ---
     if model is None:
         model = TransformerAutoencoder(
@@ -119,12 +120,10 @@ def main():
             num_encoder_layers=config.NUM_ENCODER_LAYERS, num_decoder_layers=config.NUM_DECODER_LAYERS,
             dim_feedforward=config.DIM_FEEDFORWARD, dropout=config.DROPOUT, pad_idx=tokenizer.pad_idx
         ).to(config.DEVICE)
-        model = torch.compile(model)
     if optimizer is None:
         optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
 
     criterion = nn.CrossEntropyLoss(ignore_index=tokenizer.pad_idx)
-
     # --- Training Loop ---
     print("\nStarting training... 🚀 (Press Ctrl+C to interrupt and save)")
     try:

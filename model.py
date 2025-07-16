@@ -61,11 +61,9 @@ class TransformerAutoencoder(nn.Module):
         tgt_key_padding_mask = (tgt == self.pad_idx)
         tgt_mask = self._generate_square_subsequent_mask(tgt.size(1), src.device)
 
-        # Permute from [batch, seq] to [seq, batch] for embedding/pos_encoder
         src_emb = self.pos_encoder(self.embedding(src).permute(1,0,2) * math.sqrt(self.d_model))
         tgt_emb = self.pos_encoder(self.embedding(tgt).permute(1,0,2) * math.sqrt(self.d_model))
         
-        # Permute back to [batch, seq] for batch_first=True transformer layers
         src_emb = src_emb.permute(1,0,2)
         tgt_emb = tgt_emb.permute(1,0,2)
 
@@ -78,6 +76,7 @@ class TransformerAutoencoder(nn.Module):
         return self.fc_out(output)
 
     def encode(self, src):
+        """Encodes a source sequence into the latent space (memory)."""
         self.eval()
         with torch.no_grad():
             src_key_padding_mask = (src == self.pad_idx)
@@ -86,38 +85,30 @@ class TransformerAutoencoder(nn.Module):
             memory = self.transformer_encoder(src_emb, src_key_padding_mask=src_key_padding_mask)
         return memory
 
-    def generate(self, src, sos_idx, eos_idx, max_len=100):
-        """
-        Autoregressive generation for inference.
-        """
+    def generate_from_latent(self, memory, sos_idx, eos_idx, max_len=100):
+        """Autoregressively generates a sequence from a latent space representation."""
         self.eval()
         with torch.no_grad():
-            memory = self.encode(src)
             # Start with <sos> token
-            ys = torch.ones(src.size(0), 1).fill_(sos_idx).long().to(src.device)
+            ys = torch.ones(1, 1).fill_(sos_idx).long().to(memory.device)
             for _ in range(max_len - 1):
-                # Prepare masks and embeddings for decoder
-                tgt_key_padding_mask = (ys == self.pad_idx)
-                tgt_mask = self._generate_square_subsequent_mask(ys.size(1), src.device)
+                tgt_mask = self._generate_square_subsequent_mask(ys.size(1), memory.device)
                 
                 tgt_emb = self.pos_encoder(self.embedding(ys).permute(1,0,2) * math.sqrt(self.d_model))
                 tgt_emb = tgt_emb.permute(1,0,2)
                 
-                memory_key_padding_mask = (src == self.pad_idx)
+                out = self.transformer_decoder(tgt_emb, memory, tgt_mask=tgt_mask)
                 
-                out = self.transformer_decoder(tgt_emb, memory,
-                                               tgt_mask=tgt_mask,
-                                               tgt_key_padding_mask=tgt_key_padding_mask,
-                                               memory_key_padding_mask=memory_key_padding_mask)
-                
-                # Get the last predicted token
                 last_token_logits = self.fc_out(out[:, -1, :])
                 next_token = torch.argmax(last_token_logits, dim=1)
                 
-                # Append predicted token to the sequence
-                ys = torch.cat([ys, next_token.unsqueeze(1)], dim=1)
+                ys = torch.cat([ys, next_token.unsqueeze(0)], dim=1)
                 
-                # Stop if all sequences in batch have generated <eos>
-                if (next_token == eos_idx).all():
+                if next_token.item() == eos_idx:
                     break
         return ys
+
+    def generate(self, src, sos_idx, eos_idx, max_len=100):
+        """Encodes a source sequence and then generates a reconstruction."""
+        memory = self.encode(src)
+        return self.generate_from_latent(memory, sos_idx, eos_idx, max_len)
